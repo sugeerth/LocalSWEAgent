@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SWE-bench · Managed Agent</title>
+<style>
+  :root {
+    --bg:#0a0a0f; --surf:#12121a; --surf2:#1a1a2e; --border:#2a2a3e;
+    --text:#e0e0e8; --dim:#8888a0; --accent:#7c5cff; --green:#4cdf7c;
+    --red:#ff5c6c; --yellow:#ffc45c; --blue:#5cb8ff;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font:13px 'SF Mono','Fira Code',monospace; background:var(--bg);
+         color:var(--text); }
+  header { padding:18px 24px; border-bottom:1px solid var(--border);
+           display:flex; justify-content:space-between; align-items:center;
+           background:var(--surf); }
+  h1 { font-size:16px; font-weight:600; }
+  h1 .accent { color:var(--accent); }
+  .tag { color:var(--dim); font-size:11px; margin-top:2px; }
+  .actions { display:flex; gap:10px; align-items:center; }
+  button { background:var(--accent); color:#fff; border:0; padding:8px 16px;
+           border-radius:6px; cursor:pointer; font:inherit; font-weight:600; }
+  button:disabled { opacity:0.4; cursor:not-allowed; }
+  .summary { display:flex; gap:18px; padding:14px 24px;
+             border-bottom:1px solid var(--border); background:var(--surf); }
+  .stat { display:flex; flex-direction:column; gap:2px; }
+  .stat .n { font-size:22px; font-weight:700; }
+  .stat .l { font-size:10px; color:var(--dim); text-transform:uppercase;
+             letter-spacing:0.08em; }
+  .stat.solved .n { color:var(--green); }
+  .stat.failed .n { color:var(--red); }
+  .stat.running .n { color:var(--yellow); }
+  main { display:grid; grid-template-columns:340px 1fr; height:calc(100vh - 130px); }
+  .tasklist { border-right:1px solid var(--border); overflow-y:auto;
+              background:var(--surf); }
+  .task { padding:12px 16px; border-bottom:1px solid var(--border);
+          cursor:pointer; display:flex; flex-direction:column; gap:4px; }
+  .task:hover { background:var(--surf2); }
+  .task.active { background:var(--surf2); border-left:3px solid var(--accent); }
+  .task .id { font-weight:600; font-size:12px; }
+  .task .meta { font-size:10px; color:var(--dim); display:flex; gap:10px; }
+  .badge { display:inline-block; padding:2px 6px; border-radius:4px;
+           font-size:10px; font-weight:600; text-transform:uppercase; }
+  .b-pending { background:#2a2a3e; color:var(--dim); }
+  .b-running { background:rgba(255,196,92,0.18); color:var(--yellow); }
+  .b-solved  { background:rgba(76,223,124,0.18); color:var(--green); }
+  .b-no_diff { background:rgba(255,140,92,0.18); color:#ff8c5c; }
+  .b-failed  { background:rgba(255,92,108,0.18); color:var(--red); }
+  .detail { padding:18px 24px; overflow-y:auto; }
+  .detail h2 { font-size:14px; margin-bottom:10px; }
+  .detail .sub { font-size:11px; color:var(--dim); margin-bottom:18px;
+                 display:flex; gap:16px; flex-wrap:wrap; }
+  .section { margin-bottom:22px; }
+  .section .title { font-size:10px; text-transform:uppercase; letter-spacing:0.1em;
+                    color:var(--dim); margin-bottom:8px; }
+  .feed { background:var(--surf); border:1px solid var(--border); border-radius:6px;
+          max-height:380px; overflow-y:auto; padding:8px; }
+  .feed-row { padding:6px 8px; border-bottom:1px dashed var(--border);
+              font-size:12px; white-space:pre-wrap; word-break:break-word; }
+  .feed-row:last-child { border-bottom:0; }
+  .feed-row .kind { display:inline-block; min-width:80px; color:var(--dim);
+                    font-weight:600; font-size:10px; text-transform:uppercase; }
+  .feed-row.tool .kind { color:var(--blue); }
+  .feed-row.tool_result .kind { color:var(--dim); }
+  .feed-row.text .kind { color:var(--accent); }
+  .feed-row.error .kind { color:var(--red); }
+  .feed-row .ts { color:var(--dim); font-size:10px; margin-right:8px; }
+  pre.diff { background:#08080c; border:1px solid var(--border); border-radius:6px;
+             padding:12px; font-size:12px; overflow-x:auto;
+             max-height:420px; overflow-y:auto; }
+  pre.diff .add { color:var(--green); }
+  pre.diff .del { color:var(--red); }
+  pre.diff .hdr { color:var(--blue); }
+  .empty { color:var(--dim); font-style:italic; }
+  .agent-panel { background:var(--surf); border-bottom:1px solid var(--border);
+                 padding:0 24px; }
+  .agent-panel summary { cursor:pointer; padding:12px 0; font-size:12px;
+                         font-weight:600; color:var(--accent);
+                         list-style:none; display:flex; align-items:center; gap:8px; }
+  .agent-panel summary::before { content:'▸'; transition:transform 0.15s;
+                                 display:inline-block; color:var(--dim); }
+  .agent-panel[open] summary::before { transform:rotate(90deg); }
+  .agent-grid { display:grid; grid-template-columns:repeat(4, 1fr); gap:16px;
+                padding-bottom:18px; }
+  .agent-grid .card { background:var(--surf2); border:1px solid var(--border);
+                      border-radius:6px; padding:12px; }
+  .agent-grid .card.wide { grid-column:span 2; }
+  .agent-grid .card.full { grid-column:1 / -1; }
+  .agent-grid .card .label { font-size:10px; text-transform:uppercase;
+                             color:var(--dim); letter-spacing:0.08em;
+                             margin-bottom:6px; }
+  .agent-grid .card .value { font-size:12px; word-break:break-all; }
+  .agent-grid .card pre { font-size:11px; color:var(--text); white-space:pre-wrap;
+                          max-height:180px; overflow-y:auto; background:#08080c;
+                          padding:8px; border-radius:4px; }
+  .tool-chip { display:inline-block; background:rgba(124,92,255,0.15);
+               color:var(--accent); padding:3px 8px; border-radius:4px;
+               font-size:11px; margin:2px 4px 2px 0; }
+  .tool-chip.builtin { background:rgba(92,184,255,0.15); color:var(--blue); }
+  .kv { display:flex; justify-content:space-between; padding:2px 0;
+        font-size:11px; border-bottom:1px dashed var(--border); }
+  .kv:last-child { border-bottom:0; }
+  .kv .k { color:var(--dim); }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>SWE-bench · <span class="accent">Managed Agent</span></h1>
+    <div class="tag">claude-opus-4-6 · goal: solve ≥ 10 tasks</div>
+  </div>
+  <div class="actions">
+    <div id="conn" class="tag">connecting…</div>
+    <button id="run-btn">Run 10 tasks</button>
+  </div>
+</header>
+
+<details class="agent-panel" id="agent-panel" open>
+  <summary>Managed Agent Configuration</summary>
+  <div class="agent-grid" id="agent-grid">
+    <div class="card full"><div class="label">loading…</div></div>
+  </div>
+</details>
+
+<div class="summary">
+  <div class="stat"><span class="n" id="n-total">10</span><span class="l">Total</span></div>
+  <div class="stat solved"><span class="n" id="n-solved">0</span><span class="l">Solved</span></div>
+  <div class="stat running"><span class="n" id="n-running">0</span><span class="l">Running</span></div>
+  <div class="stat failed"><span class="n" id="n-failed">0</span><span class="l">Failed</span></div>
+  <div class="stat"><span class="n" id="n-tools">0</span><span class="l">Tool Calls</span></div>
+  <div class="stat"><span class="n" id="n-elapsed">0s</span><span class="l">Elapsed</span></div>
+</div>
+
+<main>
+  <aside class="tasklist" id="tasklist"></aside>
+  <section class="detail" id="detail">
+    <div class="empty">Select a task to view details.</div>
+  </section>
+</main>
+
+<script>
+const state = { tasks: {}, order: [], selected: null, runStart: null };
+
+function fmtTime(t) { if (!t) return '—'; const d=new Date(t*1000); return d.toLocaleTimeString(); }
+function fmtDur(a,b) { if (!a) return ''; const e=((b||Date.now()/1000)-a); return `${e.toFixed(1)}s`; }
+
+function renderList() {
+  const el = document.getElementById('tasklist');
+  el.innerHTML = '';
+  state.order.forEach(tid => {
+    const t = state.tasks[tid];
+    const div = document.createElement('div');
+    div.className = 'task' + (tid === state.selected ? ' active' : '');
+    div.onclick = () => { state.selected = tid; renderList(); renderDetail(); };
+    const dur = t.started_at ? fmtDur(t.started_at, t.ended_at) : '';
+    div.innerHTML = `
+      <div class="id">${tid}</div>
+      <div class="meta">
+        <span class="badge b-${t.status}">${t.status}</span>
+        <span>${t.tool_calls || 0} tools</span>
+        <span>${dur}</span>
+      </div>`;
+    el.appendChild(div);
+  });
+  renderSummary();
+}
+
+function renderSummary() {
+  let solved=0, failed=0, running=0, tools=0;
+  state.order.forEach(tid => {
+    const t = state.tasks[tid];
+    if (t.status==='solved') solved++;
+    else if (t.status==='failed'||t.status==='no_diff') failed++;
+    else if (t.status==='running') running++;
+    tools += t.tool_calls || 0;
+  });
+  document.getElementById('n-solved').textContent = solved;
+  document.getElementById('n-failed').textContent = failed;
+  document.getElementById('n-running').textContent = running;
+  document.getElementById('n-tools').textContent = tools;
+  if (state.runStart) {
+    document.getElementById('n-elapsed').textContent =
+      `${((Date.now()-state.runStart)/1000).toFixed(0)}s`;
+  }
+}
+
+function colorDiff(diff) {
+  return diff.split('\n').map(l => {
+    const e = l.replace(/&/g,'&amp;').replace(/</g,'&lt;');
+    if (l.startsWith('+++') || l.startsWith('---') || l.startsWith('diff') ||
+        l.startsWith('@@')) return `<span class="hdr">${e}</span>`;
+    if (l.startsWith('+')) return `<span class="add">${e}</span>`;
+    if (l.startsWith('-')) return `<span class="del">${e}</span>`;
+    return e;
+  }).join('\n');
+}
+
+function renderDetail() {
+  const el = document.getElementById('detail');
+  if (!state.selected) { el.innerHTML = '<div class="empty">Select a task.</div>'; return; }
+  const t = state.tasks[state.selected];
+  const feed = (t.events || []).slice(-300).map(e => `
+    <div class="feed-row ${e.kind}">
+      <span class="ts">${fmtTime(e.t)}</span>
+      <span class="kind">${e.kind}</span>
+      ${e.text.replace(/&/g,'&amp;').replace(/</g,'&lt;')}
+    </div>`).join('') || '<div class="empty">no events yet</div>';
+
+  const diff = t.diff
+    ? `<pre class="diff">${colorDiff(t.diff)}</pre>`
+    : '<div class="empty">no diff produced yet</div>';
+
+  el.innerHTML = `
+    <h2>${t.id}</h2>
+    <div class="sub">
+      <span class="badge b-${t.status}">${t.status}</span>
+      <span>session: ${t.session_id || '—'}</span>
+      <span>started: ${fmtTime(t.started_at)}</span>
+      <span>ended: ${fmtTime(t.ended_at)}</span>
+      <span>duration: ${fmtDur(t.started_at, t.ended_at)}</span>
+      <span>tool calls: ${t.tool_calls || 0}</span>
+    </div>
+    ${t.error ? `<div class="section"><div class="title">Error</div>
+      <pre class="diff" style="color:var(--red)">${t.error}</pre></div>` : ''}
+    <div class="section">
+      <div class="title">Live Feed</div>
+      <div class="feed" id="feed">${feed}</div>
+    </div>
+    <div class="section">
+      <div class="title">Final Diff</div>
+      ${diff}
+    </div>`;
+  const f = document.getElementById('feed');
+  if (f) f.scrollTop = f.scrollHeight;
+}
+
+async function loadInitial() {
+  const r = await fetch('/api/state');
+  const s = await r.json();
+  state.order = s.tasks.map(t => t.id);
+  s.tasks.forEach(t => state.tasks[t.id] = t);
+  if (!state.selected && state.order.length) state.selected = state.order[0];
+  renderList(); renderDetail();
+  document.getElementById('run-btn').disabled = s.running;
+}
+
+function connect() {
+  const es = new EventSource('/stream');
+  es.onopen = () => document.getElementById('conn').textContent = 'connected';
+  es.onerror = () => document.getElementById('conn').textContent = 'reconnecting…';
+  es.onmessage = (e) => {
+    const m = JSON.parse(e.data);
+    if (m.type === 'task_update') {
+      state.tasks[m.task.id] = m.task;
+      renderList();
+      if (m.task.id === state.selected) renderDetail();
+    } else if (m.type === 'event') {
+      const t = state.tasks[m.task_id];
+      if (!t) return;
+      t.events = t.events || [];
+      t.events.push(m.event);
+      t.tool_calls = m.tool_calls;
+      renderSummary();
+      if (m.task_id === state.selected) renderDetail();
+    } else if (m.type === 'run_started') {
+      state.runStart = Date.now();
+      document.getElementById('run-btn').disabled = true;
+    } else if (m.type === 'run_done') {
+      document.getElementById('run-btn').disabled = false;
+    } else if (m.type === 'fatal') {
+      alert('Fatal: ' + m.msg);
+      document.getElementById('run-btn').disabled = false;
+    }
+  };
+}
+
+document.getElementById('run-btn').onclick = async () => {
+  const r = await fetch('/api/start', { method: 'POST' });
+  if (!r.ok) alert((await r.json()).msg || 'failed to start');
+};
+
+async function loadAgentInfo() {
+  const grid = document.getElementById('agent-grid');
+  try {
+    const r = await fetch('/api/agent-info');
+    const info = await r.json();
+    if (info.error) { grid.innerHTML = `<div class="card full"><div class="label">error</div><div class="value">${info.error}</div></div>`; return; }
+    const a = info.agent, e = info.environment;
+
+    // tools — built-in toolset expands into its sub-tools for clarity
+    const toolChips = [];
+    (a.tools || []).forEach(t => {
+      if (t.type === 'agent_toolset_20260401') {
+        ['bash','read','write','edit','glob','grep','web_fetch','web_search'].forEach(n => {
+          toolChips.push(`<span class="tool-chip builtin">${n}</span>`);
+        });
+      } else if (t.type === 'custom') {
+        toolChips.push(`<span class="tool-chip">custom: ${t.name}</span>`);
+      } else if (t.type === 'mcp_toolset') {
+        toolChips.push(`<span class="tool-chip">mcp: ${t.mcp_server_name}</span>`);
+      } else {
+        toolChips.push(`<span class="tool-chip">${t.type}</span>`);
+      }
+    });
+
+    const esc = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+    const envCfg = e.config || {};
+    const net = envCfg.networking || {};
+
+    grid.innerHTML = `
+      <div class="card">
+        <div class="label">Agent ID</div>
+        <div class="value">${a.id}</div>
+        <div class="kv"><span class="k">name</span><span>${a.name}</span></div>
+        <div class="kv"><span class="k">version</span><span>${a.version}</span></div>
+        <div class="kv"><span class="k">model</span><span>${a.model && a.model.id ? a.model.id : (a.model || '—')}</span></div>
+      </div>
+
+      <div class="card">
+        <div class="label">Environment</div>
+        <div class="value">${e.id}</div>
+        <div class="kv"><span class="k">name</span><span>${e.name}</span></div>
+        <div class="kv"><span class="k">type</span><span>${envCfg.type || '—'}</span></div>
+        <div class="kv"><span class="k">networking</span><span>${net.type || '—'}</span></div>
+      </div>
+
+      <div class="card">
+        <div class="label">Runtime</div>
+        <div class="kv"><span class="k">parallelism</span><span>${info.parallelism} concurrent sessions</span></div>
+        <div class="kv"><span class="k">beta header</span><span>${info.beta_header}</span></div>
+        <div class="kv"><span class="k">orchestration</span><span>Anthropic-hosted</span></div>
+        <div class="kv"><span class="k">container</span><span>per-session cloud sandbox</span></div>
+      </div>
+
+      <div class="card">
+        <div class="label">How It Works</div>
+        <div class="value" style="font-size:11px; line-height:1.5; color:var(--dim)">
+          Agent is a persisted, versioned config. Each session spins up an isolated
+          container. The agent loop runs on Anthropic's orchestration layer and
+          executes tools inside the container. Events stream back via SSE.
+        </div>
+      </div>
+
+      <div class="card wide">
+        <div class="label">Built-in Tools (agent_toolset_20260401)</div>
+        <div>${toolChips.join('') || '<span class="empty">none</span>'}</div>
+      </div>
+
+      <div class="card wide">
+        <div class="label">Features Enabled by Default</div>
+        <div>
+          <span class="tool-chip">extended thinking</span>
+          <span class="tool-chip">prompt caching</span>
+          <span class="tool-chip">context compaction</span>
+          <span class="tool-chip">SSE event stream</span>
+        </div>
+      </div>
+
+      <div class="card full">
+        <div class="label">System Prompt</div>
+        <pre>${esc(a.system) || '<span class="empty">(none)</span>'}</pre>
+      </div>
+
+      <div class="card full">
+        <div class="label">Per-Task Session Setup</div>
+        <pre>resources: clone target repo via bash (depth-1 fetch at base commit)
+model: ${a.model && a.model.id ? a.model.id : (a.model || '—')}
+workspace: /workspace/repo (inside sandbox)
+on completion: agent runs \`git diff\`, dashboard captures output</pre>
+      </div>
+    `;
+  } catch (err) {
+    grid.innerHTML = `<div class="card full"><div class="label">error</div><div class="value">${err}</div></div>`;
+  }
+}
+
+setInterval(renderSummary, 1000);
+loadAgentInfo();
+loadInitial();
+connect();
+</script>
+</body>
+</html>
