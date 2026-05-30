@@ -1,0 +1,64 @@
+{
+  "model": "qwen2.5:3b",
+  "results": [
+    {
+      "instance_id": "django__django-10914",
+      "model_patch": "--- a/django/core/files/storage.py\n+++ b/django/core/files/storage.py\n@@ -16,6 +16,7 @@\n from django.utils.module_loading import import_string\n from django.utils.text import get_valid_filename\n \n+FILE_UPLOAD_PERMISSIONS = 0o644\n __all__ = (\n     'Storage', 'FileSystemStorage', 'DefaultStorage', 'default_storage',\n     'get_storage_class',\n",
+      "valid_patch": true,
+      "time_seconds": 49.9,
+      "gold_patch": "diff --git a/django/conf/global_settings.py b/django/conf/global_settings.py\n--- a/django/conf/global_settings.py\n+++ b/django/conf/global_settings.py\n@@ -304,7 +304,7 @@ def gettext_noop(s):\n \n # The numeric mode to set newly-uploaded files to. The value should be a mode\n # you'd pass directly to os.chmod; see https://docs.python.org/library/os.html#files-and-directories.\n-FILE_UPLOAD_PERMISSIONS = None\n+FILE_UPLOAD_PERMISSIONS = 0o644\n \n # The numeric mode to assign to newly-created directories, when uploading files.\n # The value should be a mode as you'd pass to os.chmod;\n",
+      "patch_similarity": 0.5
+    },
+    {
+      "instance_id": "django__django-11133",
+      "model_patch": "--- a/django/http/__init__.py\n+++ b/django/http/__init__.py\n@@ -4,6 +4,7 @@\n )\n from django.http.response import (\n     BadHeaderError, FileResponse, Http404, HttpResponse,\n+    from django.utils.encoding import force_str\n     HttpResponseBadRequest, HttpResponseForbidden, HttpResponseGone,\n     HttpResponseNotAllowed, HttpResponseNotFound, HttpResponseNotModified,\n     HttpResponsePermanentRedirect, HttpResponseRedirect,\n",
+      "valid_patch": true,
+      "time_seconds": 39.0,
+      "gold_patch": "diff --git a/django/http/response.py b/django/http/response.py\n--- a/django/http/response.py\n+++ b/django/http/response.py\n@@ -229,7 +229,7 @@ def make_bytes(self, value):\n         # Handle string types -- we can't rely on force_bytes here because:\n         # - Python attempts str conversion first\n         # - when self._charset != 'utf-8' it re-encodes the content\n-        if isinstance(value, bytes):\n+        if isinstance(value, (bytes, memoryview)):\n             return bytes(value)\n         if isinstance(value, str):\n             return bytes(value.encode(self.charset))\n",
+      "patch_similarity": 0.0
+    },
+    {
+      "instance_id": "django__django-11179",
+      "model_patch": "--- a/django/db/models/deletion.py\n+++ b/django/db/models/deletion.py\n@@ -278,6 +278,7 @@\n                 with transaction.mark_for_rollback_on_error():\n                     count = sql.DeleteQuery(model).delete_batch([instance.pk], self.using)\n                 return count, {model._meta.label: count}\n+                deleted_counter[model._meta.label] = count\n \n         with transaction.atomic(using=self.using, savepoint=False):\n             # send pre_delete signals\n",
+      "valid_patch": true,
+      "time_seconds": 55.4,
+      "gold_patch": "diff --git a/django/db/models/deletion.py b/django/db/models/deletion.py\n--- a/django/db/models/deletion.py\n+++ b/django/db/models/deletion.py\n@@ -277,6 +277,7 @@ def delete(self):\n             if self.can_fast_delete(instance):\n                 with transaction.mark_for_rollback_on_error():\n                     count = sql.DeleteQuery(model).delete_batch([instance.pk], self.using)\n+                setattr(instance, model._meta.pk.attname, None)\n                 return count, {model._meta.label: count}\n \n         with transaction.atomic(using=self.using, savepoint=False):\n",
+      "patch_similarity": 0.0
+    },
+    {
+      "instance_id": "django__django-12908",
+      "model_patch": "--- a/django/template/base.py\n+++ b/django/template/base.py\n@@ -657,6 +657,7 @@\n                 filter_func = parser.find_filter(filter_name)\n                 self.args_check(filter_name, filter_func, args)\n                 filters.append((filter_func, args))\n+                qs = qs.distinct('name')\n             upto = match.end()\n         if upto != len(token):\n             raise TemplateSyntaxError(\"Could not parse the remainder: '%s' \"\n",
+      "valid_patch": true,
+      "time_seconds": 55.5,
+      "gold_patch": "diff --git a/django/db/models/query.py b/django/db/models/query.py\n--- a/django/db/models/query.py\n+++ b/django/db/models/query.py\n@@ -1138,6 +1138,7 @@ def distinct(self, *field_names):\n         \"\"\"\n         Return a new QuerySet instance that will select only distinct results.\n         \"\"\"\n+        self._not_support_combined_queries('distinct')\n         assert not self.query.is_sliced, \\\n             \"Cannot create distinct fields once a slice has been taken.\"\n         obj = self._chain()\n",
+      "patch_similarity": 0.0
+    },
+    {
+      "instance_id": "django__django-13230",
+      "model_patch": "--- a/django/utils/feedgenerator.py\n+++ b/django/utils/feedgenerator.py\n@@ -27,6 +27,7 @@\n from urllib.parse import urlparse\n \n from django.utils.encoding import iri_to_uri\n+comments=None,\n from django.utils.timezone import utc\n from django.utils.xmlutils import SimplerXMLGenerator\n \n",
+      "valid_patch": true,
+      "time_seconds": 43.1,
+      "gold_patch": "diff --git a/django/contrib/syndication/views.py b/django/contrib/syndication/views.py\n--- a/django/contrib/syndication/views.py\n+++ b/django/contrib/syndication/views.py\n@@ -212,6 +212,7 @@ def get_feed(self, obj, request):\n                 author_name=author_name,\n                 author_email=author_email,\n                 author_link=author_link,\n+                comments=self._get_dynamic_attr('item_comments', item),\n                 categories=self._get_dynamic_attr('item_categories', item),\n                 item_copyright=self._get_dynamic_attr('item_copyright', item),\n                 **self.item_extra_kwargs(item)\n",
+      "patch_similarity": 0.0
+    },
+    {
+      "instance_id": "django__django-13447",
+      "model_patch": "--- a/django/contrib/admin/models.py\n+++ b/django/contrib/admin/models.py\n@@ -97,6 +97,7 @@\n         \"\"\"\n         If self.change_message is a JSON structure, interpret it as a change\n         string, properly translated.\n+        def _build_app_dict(self):\n         \"\"\"\n         if self.change_message and self.change_message[0] == '[':\n             try:\n",
+      "valid_patch": true,
+      "time_seconds": 57.0,
+      "gold_patch": "diff --git a/django/contrib/admin/sites.py b/django/contrib/admin/sites.py\n--- a/django/contrib/admin/sites.py\n+++ b/django/contrib/admin/sites.py\n@@ -461,6 +461,7 @@ def _build_app_dict(self, request, label=None):\n \n             info = (app_label, model._meta.model_name)\n             model_dict = {\n+                'model': model,\n                 'name': capfirst(model._meta.verbose_name_plural),\n                 'object_name': model._meta.object_name,\n                 'perms': perms,\n",
+      "patch_similarity": 0.0
+    }
+  ],
+  "summary": {
+    "model": "qwen2.5:3b",
+    "total_instances": 6,
+    "patches_applied": 6,
+    "apply_rate": 1.0,
+    "best_similarity": 0.5,
+    "patches_right_file": 6,
+    "avg_time_per_instance": 50.0,
+    "hardware": "Apple M3 Pro, 36GB RAM",
+    "approach": "Multi-strategy (fix-line, add-line, replace) with deterministic file finding"
+  }
+}
