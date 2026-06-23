@@ -8,15 +8,13 @@ function, then ask the LLM a very simple question about that one function.
 
 import os
 import re
-import ast
 import subprocess
-import tempfile
 import shutil
-import difflib
 from pathlib import Path
 from typing import Optional
 
 from .ollama_client import OllamaClient
+from . import repo_utils
 
 SYSTEM = """You are a code bug fixer. You respond with ONLY code, no explanations.
 When asked to fix a line, output ONLY the fixed line, nothing else."""
@@ -271,63 +269,13 @@ NEW_LINE: <the new line of code to add>""", system=SYSTEM, temperature=0.05)
         return list(dict.fromkeys(kw))[:20]
 
     def _find_relevant_range(self, lines: list[str], keywords: list[str]) -> Optional[tuple]:
-        scores = [0] * len(lines)
-        for i, line in enumerate(lines):
-            for kw in keywords:
-                if kw in line:
-                    for j in range(max(0, i-3), min(len(lines), i+4)):
-                        scores[j] += 1
-        if max(scores) == 0:
-            return None
-        peak = scores.index(max(scores))
-        return (max(0, peak - 15), min(len(lines), peak + 15))
+        return repo_utils.find_relevant_range(lines, keywords)
 
     def _make_diff(self, filepath: str, old_lines: list[str], new_lines: list[str]) -> str:
-        old_text = '\n'.join(old_lines) + '\n'
-        new_text = '\n'.join(new_lines) + '\n'
-        diff = difflib.unified_diff(
-            old_text.splitlines(keepends=True),
-            new_text.splitlines(keepends=True),
-            fromfile=f"a/{filepath}",
-            tofile=f"b/{filepath}",
-        )
-        return ''.join(diff)
+        return repo_utils.make_diff(filepath, old_lines, new_lines)
 
     def _apply_patch(self, patch: str, repo_dir: str) -> bool:
-        if not patch:
-            return False
-        try:
-            r = subprocess.run(
-                ["git", "apply", "--whitespace=fix", "-"],
-                input=patch, capture_output=True, text=True, cwd=repo_dir, timeout=10
-            )
-            if r.returncode == 0:
-                return True
-            r2 = subprocess.run(
-                ["git", "apply", "--whitespace=nowarn", "--unidiff-zero", "-"],
-                input=patch, capture_output=True, text=True, cwd=repo_dir, timeout=10
-            )
-            return r2.returncode == 0
-        except:
-            return False
+        return repo_utils.apply_patch(patch, repo_dir)
 
     def _clone(self, repo: str, commit: str) -> Optional[str]:
-        repo_dir = os.path.join(tempfile.mkdtemp(prefix="precision_"), repo.replace("/", "_"))
-        try:
-            print(f"  Cloning {repo}...")
-            subprocess.run(
-                ["git", "clone", "--depth", "100", f"https://github.com/{repo}.git", repo_dir],
-                capture_output=True, timeout=120, check=True
-            )
-            try:
-                subprocess.run(["git", "checkout", commit], cwd=repo_dir,
-                             capture_output=True, timeout=30, check=True)
-            except subprocess.CalledProcessError:
-                subprocess.run(["git", "fetch", "--unshallow"], cwd=repo_dir,
-                             capture_output=True, timeout=180)
-                subprocess.run(["git", "checkout", commit], cwd=repo_dir,
-                             capture_output=True, timeout=30, check=True)
-            return repo_dir
-        except Exception as e:
-            print(f"  Clone failed: {e}")
-            return None
+        return repo_utils.clone_repo(repo, commit, prefix="precision_")

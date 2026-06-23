@@ -11,15 +11,13 @@ Strategy: Multiple approaches combined:
 
 import os
 import re
-import json
 import subprocess
-import tempfile
 import shutil
-import difflib
 from pathlib import Path
 from typing import Optional
 
 from .ollama_client import OllamaClient
+from . import repo_utils
 
 
 SYSTEM = """You are a surgical code fixer. You make MINIMAL one-line changes.
@@ -261,25 +259,7 @@ FILE: <path>
     # ---- Helpers ----
 
     def _clone(self, repo: str, commit: str) -> Optional[str]:
-        repo_dir = os.path.join(tempfile.mkdtemp(prefix="turbo_"), repo.replace("/", "_"))
-        try:
-            print(f"  Cloning {repo}...")
-            subprocess.run(
-                ["git", "clone", "--depth", "100", f"https://github.com/{repo}.git", repo_dir],
-                capture_output=True, timeout=120, check=True
-            )
-            try:
-                subprocess.run(["git", "checkout", commit], cwd=repo_dir,
-                             capture_output=True, timeout=30, check=True)
-            except subprocess.CalledProcessError:
-                subprocess.run(["git", "fetch", "--unshallow"], cwd=repo_dir,
-                             capture_output=True, timeout=180)
-                subprocess.run(["git", "checkout", commit], cwd=repo_dir,
-                             capture_output=True, timeout=30, check=True)
-            return repo_dir
-        except Exception as e:
-            print(f"  Clone failed: {e}")
-            return None
+        return repo_utils.clone_repo(repo, commit, prefix="turbo_")
 
     def _find_file(self, repo_dir: str, target: str) -> Optional[str]:
         """Find a file in the repo matching the target path. Never return test files."""
@@ -322,22 +302,7 @@ FILE: <path>
 
     def _find_relevant_range(self, lines: list[str], keywords: list[str]) -> Optional[tuple]:
         """Find the range of lines most relevant to keywords."""
-        scores = [0] * len(lines)
-        for i, line in enumerate(lines):
-            for kw in keywords:
-                if kw in line:
-                    # Score nearby lines too
-                    for j in range(max(0, i-3), min(len(lines), i+4)):
-                        scores[j] += 1
-
-        if max(scores) == 0:
-            return None
-
-        # Find the peak
-        peak = scores.index(max(scores))
-        start = max(0, peak - 15)
-        end = min(len(lines), peak + 15)
-        return (start, end)
+        return repo_utils.find_relevant_range(lines, keywords)
 
     def _grep_for_relevant_files(self, repo_dir: str, problem: str) -> list[str]:
         """Use grep to find relevant files."""
@@ -369,15 +334,7 @@ FILE: <path>
 
     def _make_diff(self, filepath: str, old_lines: list[str], new_lines: list[str]) -> str:
         """Create unified diff from old and new line lists."""
-        old_text = '\n'.join(old_lines) + '\n'
-        new_text = '\n'.join(new_lines) + '\n'
-        diff = difflib.unified_diff(
-            old_text.splitlines(keepends=True),
-            new_text.splitlines(keepends=True),
-            fromfile=f"a/{filepath}",
-            tofile=f"b/{filepath}",
-        )
-        return ''.join(diff)
+        return repo_utils.make_diff(filepath, old_lines, new_lines)
 
     def _parse_search_replace(self, resp: str, repo_dir: str, files: list[str]) -> str:
         """Parse SEARCH/REPLACE block from LLM response."""
@@ -439,20 +396,4 @@ FILE: <path>
 
     def _apply_patch(self, patch: str, repo_dir: str) -> bool:
         """Actually apply the patch (not just check)."""
-        if not patch:
-            return False
-        try:
-            r = subprocess.run(
-                ["git", "apply", "--whitespace=fix", "-"],
-                input=patch, capture_output=True, text=True, cwd=repo_dir, timeout=10
-            )
-            if r.returncode == 0:
-                return True
-            # Try lenient
-            r2 = subprocess.run(
-                ["git", "apply", "--whitespace=nowarn", "--unidiff-zero", "-"],
-                input=patch, capture_output=True, text=True, cwd=repo_dir, timeout=10
-            )
-            return r2.returncode == 0
-        except:
-            return False
+        return repo_utils.apply_patch(patch, repo_dir)
