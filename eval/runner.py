@@ -15,6 +15,12 @@ from datasets import load_dataset
 from agent.swe_agent import LocalSWEAgent
 
 
+# Jaccard similarity above this counts a patch as "high similarity" and is used
+# as the proxy for an estimated resolve. Named so the threshold is tunable in
+# one place instead of being a magic number inside _compute_summary.
+HIGH_SIMILARITY_THRESHOLD = 0.3
+
+
 # Curated subset of SWE-bench Lite instances that are good for local LLM testing
 # These are chosen for: smaller repos, clearer issues, Python-focused fixes
 CURATED_INSTANCES = [
@@ -183,7 +189,7 @@ def _compute_patch_similarity(model_patch: str, gold_patch: str) -> float:
 def _compute_summary(results: list[dict], model: str, total_time: float) -> dict:
     valid = sum(1 for r in results if r.get("valid_patch"))
     similarities = [r.get("patch_similarity", 0) for r in results]
-    high_sim = sum(1 for s in similarities if s > 0.3)
+    high_sim = sum(1 for s in similarities if s > HIGH_SIMILARITY_THRESHOLD)
 
     return {
         "model": model,
